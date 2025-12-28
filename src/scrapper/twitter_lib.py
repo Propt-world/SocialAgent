@@ -8,8 +8,31 @@ from src.models.db_models import SocialPost, TweetMetrics
 api = API(settings.TWITTER_DB_PATH)
 
 async def init_twitter_session():
-    # ... (Same login logic as before) ...
-    pass
+    """
+    Idempotent login. Checks if accounts exist; adds them if missing.
+    """
+    try:
+        accounts = await api.pool.accounts_info()
+        if not accounts:
+            print("[TWITTER LIB] 🆕 No accounts found. Adding from Env Vars...")
+            
+            # Ensure we have credentials
+            if not settings.TWITTER_USERNAME or not settings.TWITTER_PASSWORD:
+                raise ValueError("Missing TWITTER_USERNAME or TWITTER_PASSWORD in env vars")
+
+            await api.pool.add_account(
+                settings.TWITTER_USERNAME,
+                settings.TWITTER_PASSWORD,
+                settings.TWITTER_EMAIL,
+                settings.TWITTER_EMAIL_PASSWORD
+            )
+            await api.pool.login_all()
+            print("[TWITTER LIB] ✅ Account added and logged in.")
+        else:
+            print(f"[TWITTER LIB] ℹ️  Session active. {len(accounts)} account(s) loaded.")
+    except Exception as e:
+        print(f"[TWITTER LIB] ❌ Login Failed: {e}")
+        raise
 
 async def fetch_profile_tweets(username: str, limit: int) -> list[SocialPost]:
     print(f"[TWITTER] 🔎 Scraping @{username} (Limit: {limit})...")

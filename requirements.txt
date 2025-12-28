@@ -1,0 +1,10 @@
+aiofiles
+fastapi
+nest-asyncio
+pydantic
+pydantic-settings
+pymongo
+python-dotenv
+redis
+twscrape
+uvicorn

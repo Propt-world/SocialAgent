@@ -1,0 +1,76 @@
+services:
+  # --- INFRASTRUCTURE ---
+  social-redis:
+    image: redis:alpine
+    container_name: social_redis
+    ports:
+      - "6380:6379" # Exposed on 6380 to avoid conflicts with other projects
+    volumes:
+      - redis_data:/data
+    restart: always
+
+  social-mongo:
+    image: mongo:latest
+    container_name: social_mongo
+    ports:
+      - "27018:27017" # Exposed on 27018
+    volumes:
+      - mongo_data:/data/db
+    restart: always
+
+  # --- PRODUCER ---
+  social-scheduler:
+    build: .
+    container_name: social_scheduler
+    command: python run_scheduler.py
+    environment:
+      - REDIS_URL=redis://social-redis:6379/0
+      - DATABASE_URL=mongodb://social-mongo:27017
+      - MONGO_DB_NAME=social_agent
+      - QUEUE_NAME=social_tasks
+    depends_on:
+      - social-redis
+      - social-mongo
+
+  # --- CONSUMER ---
+  social-worker:
+    build: .
+    container_name: social_worker
+    command: python run_worker.py
+    volumes:
+      - twitter_session:/app/data # PERSISTENT COOKIES
+    environment:
+      - REDIS_URL=redis://social-redis:6379/0
+      - DATABASE_URL=mongodb://social-mongo:27017
+      - MONGO_DB_NAME=social_agent
+      - QUEUE_NAME=social_tasks
+      # Credentials from .env file
+      - TWITTER_USERNAME=${TWITTER_USERNAME}
+      - TWITTER_PASSWORD=${TWITTER_PASSWORD}
+      - TWITTER_EMAIL=${TWITTER_EMAIL}
+      - TWITTER_EMAIL_PASSWORD=${TWITTER_EMAIL_PASSWORD}
+      - TWITTER_DB_PATH=/app/data/accounts.db
+    depends_on:
+      - social-redis
+      - social-mongo
+
+  # --- API (Control Plane) ---
+  social-api:
+    build: .
+    container_name: social_api
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
+    ports:
+      - "8001:8000" # HOST:CONTAINER. Accessed via localhost:8001
+    environment:
+      - REDIS_URL=redis://social-redis:6379/0
+      - DATABASE_URL=mongodb://social-mongo:27017
+      - MONGO_DB_NAME=social_agent
+      - QUEUE_NAME=social_tasks
+    depends_on:
+      - social-redis
+      - social-mongo
+
+volumes:
+  redis_data:
+  mongo_data:
+  twitter_session:
