@@ -92,10 +92,16 @@ def health_check():
 
     return HealthResponse(**health_data)
 
+
+# ==========================================
+# 2. QUEUE MANAGEMENT
+# ==========================================
+
 @app.get(
-    "/queue/status", 
+    "/queue/status",
+    tags=["Queue Management"], 
     response_model=QueueStatus, 
-    tags=["System"], 
+    status_code=status.HTTP_200_OK,
     dependencies=[Depends(verify_api_key)],
     summary="Worker Queue Status",
     description="Returns the current load on the worker queue (Redis)."
@@ -123,8 +129,107 @@ def get_queue_status():
             detail=f"Failed to check queue status: {str(e)}"
         )
 
+@app.get(
+    "/queue/dlq",
+    tags=["Queue Management"],
+    response_model=Dict[str, Any], # Returns a dict structure
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(verify_api_key)],
+    summary="View Dead Letter Queue",
+    description="View items that failed processing."
+)
+def view_dlq(limit: int = 10):
+    """
+    Peek at the last N items in the Dead Letter Queue.
+    """
+    r = get_redis()
+    # lrange 0 -1 fetches all, but we respect limit
+    items = r.lrange(settings.DLQ_NAME, 0, limit - 1)
+    
+    parsed_items = []
+    for item in items:
+        try:
+            parsed_items.append(json.loads(item))
+        except:
+            parsed_items.append({"raw": str(item)})
+            
+    return {
+        "queue": settings.DLQ_NAME,
+        "count": r.llen(settings.DLQ_NAME),
+        "items": parsed_items
+    }
+
+@app.post(
+    "/queue/dlq/requeue",
+    tags=["Queue Management"],
+    response_model=GenericResponse,
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(verify_api_key)],
+    summary="Requeue Failed Jobs",
+    description="Move all items from DLQ back to the Main Queue to be retried."
+)
+def requeue_dlq():
+    """
+    Atomically move all items from DLQ back to Main Queue.
+    """
+    r = get_redis()
+    count = 0
+    
+    # RPOPLPUSH is atomic: pops from DLQ, pushes to Main
+    while True:
+        # Use rpoplpush(source, destination)
+        item = r.rpoplpush(settings.DLQ_NAME, settings.QUEUE_NAME)
+        if not item:
+            break
+        count += 1
+        
+    return GenericResponse(
+        status="success",
+        message=f"Requeued {count} jobs from DLQ to {settings.QUEUE_NAME}."
+    )
+
+@app.delete(
+    "/queue/dlq",
+    tags=["Queue Management"],
+    response_model=GenericResponse,
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(verify_api_key)],
+    summary="Purge DLQ",
+    description="Permanently delete all items in the Dead Letter Queue."
+)
+def purge_dlq():
+    """
+    Clear the DLQ.
+    """
+    r = get_redis()
+    r.delete(settings.DLQ_NAME)
+    return GenericResponse(
+        status="success",
+        message="Dead Letter Queue purged."
+    )
+
+@app.delete(
+    "/queue/main",
+    tags=["Queue Management"],
+    response_model=GenericResponse,
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(verify_api_key)],
+    summary="Purge Main Queue",
+    description="Permanently delete all pending jobs."
+)
+def purge_main_queue():
+    """
+    Clear the Main Queue.
+    """
+    r = get_redis()
+    r.delete(settings.QUEUE_NAME)
+    return GenericResponse(
+        status="success",
+        message="Main Queue purged."
+    )
+
 # ==========================================
-# 2. SOURCE MANAGEMENT
+# 3. SOURCE MANAGEMENT
 # ==========================================
 
 @app.post(

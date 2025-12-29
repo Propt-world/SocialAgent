@@ -18,6 +18,16 @@ services:
       - mongo_data:/data/db
     restart: always
 
+  social-auth:
+    build: .
+    command: uvicorn src.auth_service:app --host 0.0.0.0 --port 8002
+    volumes:
+      - twitter_session:/app/data # MOUNT DB HERE
+    environment:
+      - TWITTER_DB_PATH=/app/data/accounts.db
+    ports:
+      - "8002:8002"
+
   # --- PRODUCER ---
   social-scheduler:
     build: .

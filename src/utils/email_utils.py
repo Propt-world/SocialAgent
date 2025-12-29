@@ -3,7 +3,7 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from pymongo import MongoClient
 
-from src.configs.settings import settings
+from src.config.settings import settings
 
 def get_active_recipients():
     """
@@ -40,7 +40,7 @@ def send_error_email(job_id: str, source_url: str, error_details: str, traceback
         print(f"[EMAIL] No active recipients found in database collection 'email_recipients'. Skipping.")
         return
 
-    subject = f"❌ NewsAgent Failure: Job {job_id}"
+    subject = f"❌ SocialAgent Failure: Job {job_id}"
 
     body = f"""
     <html>
